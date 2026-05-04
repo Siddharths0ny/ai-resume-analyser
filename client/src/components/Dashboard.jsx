@@ -9,9 +9,9 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const Dashboard = ({ data, onReset }) => {
   const dashboardRef = useRef(null);
-  const [rewriteTarget, setRewriteTarget] = useState(null);
-  const [rewrittenText, setRewrittenText] = useState('');
-  const [isRewriting, setIsRewriting] = useState(false);
+  const [toolModal, setToolModal] = useState(null); // 'rewrite', 'plagiarism', 'humanize'
+  const [modalData, setModalData] = useState({ text: '', result: null });
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -50,25 +50,23 @@ const Dashboard = ({ data, onReset }) => {
     }
   };
 
-  const handleRewrite = async (target) => {
-    setRewriteTarget(target);
-    setIsRewriting(true);
-    setRewrittenText('');
+  const openToolModal = (tool, text = '') => {
+    setToolModal(tool);
+    setModalData({ text, result: null });
+  };
 
+  const handleProcess = async (endpoint) => {
+    setIsProcessing(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post(`${API_URL}/api/rewrite`, {
-        targetSection: target,
-        originalText: data.summary || "Full resume content passed from backend not available in state directly, assuming general rewrite requested."
-      }, {
+      const res = await axios.post(`${API_URL}${endpoint}`, modalData.text, {
         headers: { Authorization: `Bearer ${token}` }
       });
-
-      setRewrittenText(res.data.rewrittenText);
+      setModalData(prev => ({ ...prev, result: res.data }));
     } catch (error) {
-      setRewrittenText('Failed to generate rewrite. Please ensure your OpenRouter API key is configured and you are logged in.');
+      console.error(error);
     } finally {
-      setIsRewriting(false);
+      setIsProcessing(false);
     }
   };
 
@@ -408,49 +406,77 @@ const Dashboard = ({ data, onReset }) => {
         </motion.div>
       </div>
 
-      {/* Rewrite Modal */}
-      {rewriteTarget && (
+      {/* AI Tools Modal */}
+      {toolModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
           <motion.div 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="glass-card p-6 rounded-2xl max-w-2xl w-full border border-blue-500/30 shadow-[0_0_40px_rgba(59,130,246,0.15)]"
+            className="glass-card p-6 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto border border-blue-500/30 shadow-[0_0_40px_rgba(59,130,246,0.15)]"
           >
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold flex items-center gap-2 text-slate-200">
-                <Zap size={20} className="text-yellow-400" />
-                AI Rewrite Suggestion
+                {toolModal === 'rewrite' ? 'AI Rewrite' : toolModal === 'plagiarism' ? 'Plagiarism Checker' : 'AI Humanizer'}
               </h3>
               <button 
-                onClick={() => setRewriteTarget(null)}
+                onClick={() => setToolModal(null)}
                 className="text-slate-400 hover:text-white"
               >
-                <XCircle size={24} />
+                <X size={24} />
               </button>
             </div>
             
-            <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700 min-h-[150px] relative">
-              {isRewriting ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-blue-400">
-                  <Loader2 className="animate-spin mb-2" size={24} />
-                  <span className="text-sm">Generating magic...</span>
-                </div>
-              ) : (
-                <p className="text-slate-200 text-sm whitespace-pre-wrap leading-relaxed">
-                  {rewrittenText}
-                </p>
-              )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Text to {toolModal}</label>
+              <textarea 
+                value={modalData.text}
+                onChange={(e) => setModalData({ ...modalData, text: e.target.value })}
+                rows={6}
+                className="w-full bg-slate-800/50 border border-slate-600 rounded-lg p-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 resize-vertical"
+                placeholder="Paste text here..."
+              />
             </div>
-            
-            <div className="mt-4 flex justify-end">
-              <button 
-                onClick={() => navigator.clipboard.writeText(rewrittenText)}
-                disabled={isRewriting || !rewrittenText}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                Copy to Clipboard
-              </button>
-            </div>
+
+            <button 
+              onClick={() => handleProcess(`/${toolModal}`)}
+              disabled={isProcessing || !modalData.text}
+              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white py-2 rounded-lg font-semibold mb-4 disabled:opacity-50"
+            >
+              {isProcessing ? <Loader2 className="animate-spin mx-auto" size={20} /> : `Run ${toolModal.replace(/^\w/, c => c.toUpperCase())}`}
+            </button>
+
+            {modalData.result && (
+              <div className="space-y-4">
+                {toolModal === 'plagiarism' && (
+                  <div className="p-4 bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-400/30 rounded-xl">
+                    <h4 className="font-semibold text-orange-300 mb-2">Plagiarism: {modalData.result.plagiarismScore}% | AI: {modalData.result.aiProbability}%</h4>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      {modalData.result.issues?.map((issue, i) => (
+                        <div key={i} className="bg-orange-900/30 p-2 rounded text-orange-200">{issue}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {toolModal === 'humanize' && (
+                  <div>
+                    <div className="flex justify-between text-sm text-slate-400 mb-2">
+                      <span>AI Before: {modalData.result.originalAiProb}%</span>
+                      <span>AI After: {modalData.result.humanizedAiProb}% ↓</span>
+                    </div>
+                    <div className="bg-green-900/20 p-4 rounded-lg border border-green-500/30">
+                      <p className="text-sm text-slate-200 whitespace-pre-wrap">{modalData.result.humanizedText}</p>
+                      <p className="text-xs text-green-400 mt-2">{modalData.result.humanizedWords}/300 words</p>
+                    </div>
+                  </div>
+                )}
+                <button 
+                  onClick={() => navigator.clipboard.writeText(modalData.result.humanizedText || modalData.result.rewrittenText)}
+                  className="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-lg font-medium"
+                >
+                  Copy Result
+                </button>
+              </div>
+            )}
           </motion.div>
         </div>
       )}
