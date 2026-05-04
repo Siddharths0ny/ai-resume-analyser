@@ -12,12 +12,20 @@ const router = express.Router();
 const storage = multer.memoryStorage();
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
 
 router.post('/', auth, upload.single('resume'), async (req, res) => {
+  console.log(`Uploaded file: ${req.file?.originalname}, size: ${req.file?.size || 0} bytes, mimetype: ${req.file?.mimetype || 'unknown'}`);
+  
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
+  }
+
+  // Validate file type
+  const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+  if (!allowedTypes.includes(req.file.mimetype)) {
+    return res.status(400).json({ error: 'Unsupported file type. Please upload PDF or DOCX (max 10MB).' });
   }
 
   try {
