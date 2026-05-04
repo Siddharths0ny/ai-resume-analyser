@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { LogOut, Sun, Moon } from 'lucide-react';
+import { LogOut, Sun, Moon, X } from 'lucide-react';
+import { motion } from 'framer-motion';
 import HeroSection from './components/HeroSection';
 import Dashboard from './components/Dashboard';
 import Auth from './components/Auth';
@@ -11,6 +12,7 @@ function App() {
   const [resumeData, setResumeData] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [user, setUser] = useState(null);
   const [theme, setTheme] = useState('dark');
 
@@ -34,9 +36,38 @@ function App() {
   };
 
   const handleLoginSuccess = (token, userData) => {
+    localStorage.setItem('token', token);
     setIsAuthenticated(true);
     setUser(userData);
+    setShowAuthModal(false);
   };
+
+  const handleAuthClose = () => {
+    setShowAuthModal(false);
+  };
+
+  // Check token validity on mount and upload fail
+  const checkAuth = async () => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      try {
+        const response = await axios.get(`${API_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setUser(response.data);
+      } catch {
+        localStorage.removeItem('token');
+        setIsAuthenticated(false);
+        setShowAuthModal(true);
+      }
+    } else {
+      setShowAuthModal(true);
+    }
+  };
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -56,6 +87,10 @@ function App() {
 
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        setShowAuthModal(true);
+        return;
+      }
       const response = await axios.post(`${API_URL}/api/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -63,7 +98,6 @@ function App() {
         }
       });
       
-      // Update state with the dynamic data from backend
       if (response.data && response.data.data) {
         setResumeData(response.data.data);
       } else {
@@ -71,7 +105,13 @@ function App() {
       }
     } catch (error) {
       console.error('Upload Error:', error);
-      alert('Failed to process the resume. Please ensure the backend is running and the file is a valid PDF or DOCX.');
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        setIsAuthenticated(false);
+        setShowAuthModal(true);
+      } else {
+        alert('Failed to process the resume. Please ensure the backend is running and the file is a valid PDF or DOCX.');
+      }
     } finally {
       setIsAnalyzing(false);
     }
@@ -109,12 +149,29 @@ function App() {
           )}
         </div>
 
-        {!isAuthenticated ? (
-          <Auth onLoginSuccess={handleLoginSuccess} />
-        ) : !resumeData ? (
+        {!resumeData ? (
           <HeroSection onUpload={handleUpload} isAnalyzing={isAnalyzing} />
         ) : (
           <Dashboard data={resumeData} onReset={handleReset} />
+        )}
+
+        {showAuthModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="w-full max-w-md relative"
+            >
+              <button 
+                onClick={handleAuthClose}
+                className="absolute -top-4 -right-4 z-60 p-2 bg-slate-800 rounded-full text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              >
+                <X size={24} />
+              </button>
+              <Auth onLoginSuccess={handleLoginSuccess} />
+            </motion.div>
+          </div>
         )}
       </main>
     </div>
